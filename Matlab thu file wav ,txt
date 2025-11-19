@@ -1,0 +1,99 @@
+clc; clear all;
+
+%% ===== CẤU HÌNH =====
+port = 'COM6';          % theo yêu cầu
+baud = 460800;
+
+fs = 16000;             % tần số lấy mẫu
+max_duration = 30;      % giới hạn mỗi file (giây)
+max_samples = fs * max_duration;
+
+num_files = input('Bạn muốn thu bao nhiêu file? ');
+
+%% ===== MỞ CỔNG COM =====
+s = serial(port, 'BaudRate', baud);
+set(s,'InputBufferSize', max_samples * 4 * 3);
+fopen(s);
+pause(1);
+
+disp('READY.');
+disp('Nhấn phím bất kỳ để bắt đầu thu.');
+disp('Nhấn phím bất kỳ lần nữa để dừng.');
+
+%% ===== VÒNG LẶP FILE =====
+for k = 1:num_files
+    
+    fprintf('\n=== File %d/%d: Nhấn phím để BẮT ĐẦU ===\n', k, num_files);
+    pause;   % đợi bấm phím
+    
+    disp('-> ĐANG THU... Nhấn phím để DỪNG.');
+    data = [];
+    tic;
+    
+    % ==== Vòng đọc dữ liệu ====
+    while true
+        
+        if s.BytesAvailable >= 400
+            block = fread(s, floor(s.BytesAvailable/2), 'int16');
+            data = [data; block]; %#ok<AGROW>
+        end
+        
+        % nếu nhấn phím -> stop
+        if waitforbuttonpress
+            break;
+        end
+        
+        if toc > max_duration
+            disp('-> Tự dừng (đạt tối đa thời gian).');
+            break;
+        end
+    end
+    
+    disp('-> Dừng thu, đang xử lý...');
+    
+    %% ===== XỬ LÝ TÍN HIỆU =====
+    data = reshape(data, 2, []).';
+    left  = data(:,1);
+    right = data(:,2);
+
+    % bỏ DC
+    left  = left  - mean(left);
+    right = right - mean(right);
+
+    % lọc thông cao 100 Hz
+    [b,a] = butter(4, 100/(fs/2), 'high');
+    left  = filter(b,a,left);
+    right = filter(b,a,right);
+
+    % chuẩn hóa
+    amp = max(abs([left; right]));
+    if amp > 0
+        left  = left  / amp * 0.8;
+        right = right / amp * 0.8;
+    end
+
+    stereo = [left right];
+
+    %% ===== LƯU FILE WAV =====
+    wav_name = sprintf('record_%d.wav', k);
+    audiowrite(wav_name, stereo, fs);
+    fprintf('-> Đã lưu WAV: %s\n', wav_name);
+
+    %% ===== LƯU FILE TXT =====
+    txt_name = sprintf('record_%d.txt', k);
+    fid = fopen(txt_name, 'w');
+
+    % Lưu dạng: left right
+    for i = 1:length(left)
+        fprintf(fid, '%d\t%d\n', left(i), right(i));
+    end
+    
+    fclose(fid);
+    fprintf('-> Đã lưu TXT: %s\n', txt_name);
+
+end
+
+%% ===== ĐÓNG CỔNG =====
+fclose(s);
+delete(s);
+disp('>> Hoàn tất <<');
