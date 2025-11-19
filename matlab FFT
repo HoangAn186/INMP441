@@ -1,0 +1,30 @@
+[filename, pathname] = uigetfile({'*.wav;*.txt;*.dat','All Supported Files'}, ...
+                                  'Chọn file tín hiệu');
+if isequal(filename,0)
+    disp('Không chọn file.');
+    return;
+end
+file = fullfile(pathname, filename);
+[~,~,ext] = fileparts(file);
+switch lower(ext)
+    case '.wav'
+        [x, Fs] = audioread(file);  % đọc file âm thanh
+        x = x(:,1);                 % lấy 1 kênh nếu stereo
+    case {'.txt', '.dat'}
+        x = load(file);             % đọc dữ liệu số
+        Fs = 1;                     % nếu không biết tần số mẫu
+    otherwise
+        error('Định dạng file không hỗ trợ');
+end
+% --- Thực hiện FFT ---
+N = length(x);
+X = fft(x);             % FFT
+X_mag = abs(X)/N*2;     % biên độ phổ
+f = (0:N-1)*(Fs/N);     % trục tần số
+% --- Vẽ kết quả ---
+figure;
+plot(f(1:N/2), X_mag(1:N/2));
+xlabel('Tần số (Hz)');
+ylabel('Biên độ');
+title('Phổ FFT của tín hiệu');
+grid on;
