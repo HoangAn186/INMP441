@@ -1,0 +1,58 @@
+clear; clc;
+%% --- B1: Chọn file ---
+[filename, pathname] = uigetfile('*.wav', 'Chọn file âm thanh ESP32');
+if filename == 0
+disp('Không chọn file. Thoát.');
+return;
+end
+[x, fs] = audioread(fullfile(pathname, filename));
+x = x(:,1);   % nếu file stereo → lấy kênh 1
+%% --- B2: Tham số xử lý ---
+frame_len = 512;             % độ dài frame
+overlap = 256;               % 50% overlap
+win = hamming(frame_len);    % cửa sổ
+mag_scale = 1.0;             % mức độ trừ phổ (1 = chuẩn)
+%% --- B3: Tạo noise mẫu (giả sử 0.5 giây đầu là noise) ---
+noise_len = min(fs/2, length(x));
+noise = x(1:noise_len);
+
+% FFT noise
+N = frame_len;
+noise_win = noise(1:N) .* win;
+noise_fft = fft(noise_win);
+noise_mag = abs(noise_fft);
+%% --- B4: Xử lý spectral subtraction ---
+num_frames = floor((length(x)-frame_len)/ (frame_len-overlap));
+y = zeros(length(x),1);
+ptr = 1;
+for k = 1:num_frames
+% lấy frame
+frame = x(ptr : ptr+frame_len-1) .* win;
+% FFT
+X = fft(frame);
+X_mag = abs(X);
+X_phase = angle(X);
+% --- Trừ phổ ---
+Y_mag = X_mag - mag_scale * noise_mag;
+Y_mag(Y_mag < 0) = 0;   % chống âm
+% Khôi phục phổ
+Y = Y_mag .* exp(1i * X_phase);
+
+% IFFT
+y_frame = real(ifft(Y));
+% overlap-add
+y(ptr : ptr+frame_len-1) = y(ptr : ptr+frame_len-1) + y_frame;
+ptr = ptr + (frame_len-overlap);
+end
+%% --- B5: Chuẩn hóa tín hiệu ---
+y = y / max(abs(y));
+%% --- B6: Lưu file ---
+output_file = fullfile(pathname, 'output_subtraction.wav');
+audiowrite(output_file, y, fs);
+disp(['Đã lưu file sau lọc: ', output_file]);
+%% --- B7: Hiển thị so sánh ---
+figure;
+subplot(2,1,1);
+plot(x); title('Tín hiệu gốc');
+subplot(2,1,2);
+plot(y); title('Tín hiệu sau trừ phổ');
